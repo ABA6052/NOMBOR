@@ -1,0 +1,631 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NOMBOR - Permainan Matematik MediaPipe</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Canvas Confetti CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <!-- MediaPipe Hands & Camera Utils CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Fredoka+One&family=Quicksand:wght@600;700&display=swap" rel="stylesheet">
+    
+    <style>
+        body {
+            font-family: 'Quicksand', sans-serif;
+            user-select: none;
+            overflow: hidden;
+            background-color: #0f172a;
+        }
+        .font-fredoka {
+            font-family: 'Fredoka One', cursive;
+        }
+        /* Mirroring webcam & canvas */
+        .mirror {
+            transform: scaleX(-1);
+        }
+        /* Pulse Animation */
+        @keyframes boxPulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.03); }
+        }
+        .animate-box {
+            animation: boxPulse 2s infinite ease-in-out;
+        }
+    </style>
+</head>
+<body class="h-screen w-screen relative flex flex-col justify-between items-center text-white p-4">
+
+    <!-- WebCam Output (Background) -->
+    <video id="webcam" class="hidden" playsinline></video>
+    <canvas id="output_canvas" class="absolute inset-0 w-full h-full object-cover mirror z-0 opacity-80"></canvas>
+
+    <!-- Overlay UI Layer -->
+    <div id="ui-layer" class="relative z-10 w-full h-full flex flex-col justify-between pointer-events-none">
+        
+        <!-- Top Bar: Header, Score, Timer & Controls -->
+        <div class="flex justify-between items-center bg-slate-900/80 backdrop-blur-md p-4 rounded-3xl border-2 border-indigo-500/30 shadow-2xl pointer-events-auto">
+            <div class="flex items-center gap-3">
+                <div class="bg-gradient-to-tr from-amber-400 to-yellow-300 text-slate-900 px-4 py-2 rounded-2xl font-fredoka text-xl shadow-lg flex items-center gap-2">
+                    <span>⭐</span> <span id="score-text">0</span>
+                </div>
+                <div class="bg-gradient-to-tr from-cyan-500 to-blue-500 px-4 py-2 rounded-2xl font-fredoka text-lg shadow-lg flex items-center gap-2">
+                    <span>❓ Soalan:</span> <span id="question-count">1/10</span>
+                </div>
+            </div>
+
+            <!-- Question Box -->
+            <div class="flex-1 mx-6 text-center">
+                <div class="bg-gradient-to-r from-purple-600 via-pink-600 to-red-500 px-6 py-3 rounded-3xl shadow-xl inline-block border-2 border-white/20">
+                    <h2 id="question-text" class="text-2xl md:text-3xl font-fredoka tracking-wide text-amber-200 drop-shadow-md">
+                        Memuatkan Permainan...
+                    </h2>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-3">
+                <div class="bg-gradient-to-tr from-rose-500 to-red-600 px-4 py-2 rounded-2xl font-fredoka text-xl shadow-lg flex items-center gap-2">
+                    <span>⏱️</span> <span id="timer-text">15s</span>
+                </div>
+                <button id="toggle-mode-btn" class="bg-slate-700 hover:bg-slate-600 text-xs px-3 py-2 rounded-xl border border-slate-500 transition">
+                    🖱️ Mod Tetikus/Sentuh
+                </button>
+            </div>
+        </div>
+
+        <!-- 4 Mystery Gift Boxes (Corners) -->
+        <div class="grid grid-cols-2 grid-rows-2 gap-4 flex-1 my-4 pointer-events-auto">
+            <!-- Top Left (Box 0) -->
+            <div id="box-0" class="gift-box relative flex items-center justify-center bg-gradient-to-br from-indigo-600/90 to-purple-800/90 rounded-3xl border-4 border-indigo-300 shadow-2xl backdrop-blur-md transition-all duration-300 transform hover:scale-105 active:scale-95 cursor-pointer self-start justify-self-start w-64 h-40 m-2">
+                <div class="absolute -top-4 -left-4 text-4xl">🎁</div>
+                <span class="box-answer text-3xl md:text-4xl font-fredoka text-yellow-300 drop-shadow-lg text-center px-4">---</span>
+                <!-- Progress Ring Overlay -->
+                <svg class="progress-ring absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100">
+                    <rect class="progress-bar" x="2" y="2" width="96" height="96" rx="15" fill="none" stroke="#f59e0b" stroke-width="4" stroke-dasharray="384" stroke-dashoffset="384" transition="stroke-dashoffset 0.1s linear" />
+                </svg>
+            </div>
+
+            <!-- Top Right (Box 1) -->
+            <div id="box-1" class="gift-box relative flex items-center justify-center bg-gradient-to-br from-emerald-600/90 to-teal-800/90 rounded-3xl border-4 border-emerald-300 shadow-2xl backdrop-blur-md transition-all duration-300 transform hover:scale-105 active:scale-95 cursor-pointer self-start justify-self-end w-64 h-40 m-2">
+                <div class="absolute -top-4 -right-4 text-4xl">🎁</div>
+                <span class="box-answer text-3xl md:text-4xl font-fredoka text-yellow-300 drop-shadow-lg text-center px-4">---</span>
+                <svg class="progress-ring absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100">
+                    <rect class="progress-bar" x="2" y="2" width="96" height="96" rx="15" fill="none" stroke="#f59e0b" stroke-width="4" stroke-dasharray="384" stroke-dashoffset="384" transition="stroke-dashoffset 0.1s linear" />
+                </svg>
+            </div>
+
+            <!-- Bottom Left (Box 2) -->
+            <div id="box-2" class="gift-box relative flex items-center justify-center bg-gradient-to-br from-rose-600/90 to-pink-800/90 rounded-3xl border-4 border-rose-300 shadow-2xl backdrop-blur-md transition-all duration-300 transform hover:scale-105 active:scale-95 cursor-pointer self-end justify-self-start w-64 h-40 m-2">
+                <div class="absolute -bottom-4 -left-4 text-4xl">🎁</div>
+                <span class="box-answer text-3xl md:text-4xl font-fredoka text-yellow-300 drop-shadow-lg text-center px-4">---</span>
+                <svg class="progress-ring absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100">
+                    <rect class="progress-bar" x="2" y="2" width="96" height="96" rx="15" fill="none" stroke="#f59e0b" stroke-width="4" stroke-dasharray="384" stroke-dashoffset="384" transition="stroke-dashoffset 0.1s linear" />
+                </svg>
+            </div>
+
+            <!-- Bottom Right (Box 3) -->
+            <div id="box-3" class="gift-box relative flex items-center justify-center bg-gradient-to-br from-amber-600/90 to-orange-800/90 rounded-3xl border-4 border-amber-300 shadow-2xl backdrop-blur-md transition-all duration-300 transform hover:scale-105 active:scale-95 cursor-pointer self-end justify-self-end w-64 h-40 m-2">
+                <div class="absolute -bottom-4 -right-4 text-4xl">🎁</div>
+                <span class="box-answer text-3xl md:text-4xl font-fredoka text-yellow-300 drop-shadow-lg text-center px-4">---</span>
+                <svg class="progress-ring absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100">
+                    <rect class="progress-bar" x="2" y="2" width="96" height="96" rx="15" fill="none" stroke="#f59e0b" stroke-width="4" stroke-dasharray="384" stroke-dashoffset="384" transition="stroke-dashoffset 0.1s linear" />
+                </svg>
+            </div>
+        </div>
+
+        <!-- Footer / Instructions -->
+        <div class="text-center bg-slate-900/60 backdrop-blur-sm py-2 px-6 rounded-full border border-white/10 self-center mb-2">
+            <p id="status-instruction" class="text-sm font-semibold text-cyan-300">
+                👉 Tunjukkan jari telunjuk anda pada kotak pilihan jawapan & tahan selama 1 saat untuk membuka kotak!
+            </p>
+        </div>
+    </div>
+
+    <!-- Start / Splash Screen Overlay -->
+    <div id="start-screen" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/90 backdrop-blur-lg p-6">
+        <div class="max-w-xl w-full bg-slate-900 border-2 border-indigo-500 rounded-3xl p-8 text-center shadow-2xl">
+            <h1 class="text-5xl font-fredoka text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 via-amber-300 to-orange-500 mb-4 animate-bounce">
+                🎮 NOMBOR 🎮
+            </h1>
+            <p class="text-lg text-slate-300 mb-6 leading-relaxed">
+                Permainan Edutainment Matematik Sekolah Rendah Berasaskan Kawalan Isyarat Tangan (MediaPipe AI).
+            </p>
+            <div class="bg-slate-800/80 p-4 rounded-2xl text-left mb-6 space-y-2 text-sm text-slate-300 border border-slate-700">
+                <p class="font-bold text-amber-400 text-base mb-1">Cara Bermain:</p>
+                <p>1. Benarkan akses Webcam apabila diminta.</p>
+                <p>2. Halakan jari telunjuk anda ke arah mana-mana Kotak Hadiah Misteri.</p>
+                <p>3. **Tahan (Dwell) kursor telunjuk selama 1 saat** di atas kotak untuk memilih jawapan.</p>
+                <p>4. Jawab seberapa pantas yang mungkin untuk mengumpul markah tinggi!</p>
+            </div>
+            <button id="start-btn" class="w-full py-4 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-slate-950 text-2xl font-fredoka rounded-2xl shadow-xl hover:scale-105 transition duration-200">
+                MULA BERMAIN 🚀
+            </button>
+        </div>
+    </div>
+
+    <!-- Game Over / High Score Screen Overlay -->
+    <div id="game-over-screen" class="fixed inset-0 z-50 hidden flex items-center justify-center bg-slate-950/95 backdrop-blur-xl p-6">
+        <div class="max-w-lg w-full bg-slate-900 border-2 border-amber-500 rounded-3xl p-8 text-center shadow-2xl">
+            <h2 class="text-4xl font-fredoka text-amber-400 mb-2">🎉 SYABAS & TAHNIAH! 🎉</h2>
+            <p class="text-slate-400 mb-6">Anda telah menyelesaikan semua soalan Matematik!</p>
+
+            <!-- Final Score Display -->
+            <div class="bg-gradient-to-tr from-indigo-900/80 to-purple-900/80 p-6 rounded-2xl border border-indigo-500/50 mb-6">
+                <p class="text-slate-300 text-sm font-semibold uppercase tracking-wider mb-1">JUMLAH MARKAH AKHIR</p>
+                <div id="final-score" class="text-6xl font-fredoka text-yellow-300">0</div>
+            </div>
+
+            <!-- High Scores Board -->
+            <div class="bg-slate-800/80 p-4 rounded-2xl border border-slate-700 mb-6">
+                <h3 class="text-lg font-fredoka text-cyan-400 mb-3 flex items-center justify-center gap-2">
+                    🏆 CARTA MARKAH TINGGI 🏆
+                </h3>
+                <ol id="high-scores-list" class="space-y-2 text-sm text-slate-300 text-left">
+                    <!-- High score items inserted dynamically -->
+                </ol>
+            </div>
+
+            <button id="restart-btn" class="w-full py-4 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-slate-950 text-2xl font-fredoka rounded-2xl shadow-xl hover:scale-105 transition duration-200">
+                MAIN SEMULA 🔄
+            </button>
+        </div>
+    </div>
+
+    <!-- Audio Synthesizer Script & Main Logic -->
+    <script>
+        /* ------------------------------------------------------------------
+           1. WEB AUDIO API SYNTHESIZER (Kesan Bunyi Tanpa Fail Luaran)
+           ------------------------------------------------------------------ */
+        class SoundEffects {
+            constructor() {
+                this.ctx = null;
+            }
+
+            init() {
+                if (!this.ctx) {
+                    this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+                }
+            }
+
+            playBeep(freq = 440, type = 'sine', duration = 0.1) {
+                if (!this.ctx) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = type;
+                osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+                gain.gain.setValueAtTime(0.1, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + duration);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                osc.stop(this.ctx.currentTime + duration);
+            }
+
+            playCorrect() {
+                if (!this.ctx) return;
+                const notes = [523.25, 659.25, 783.99, 1046.50]; // C5, E5, G5, C6
+                notes.forEach((freq, idx) => {
+                    setTimeout(() => {
+                        this.playBeep(freq, 'triangle', 0.2);
+                    }, idx * 80);
+                });
+            }
+
+            playWrong() {
+                if (!this.ctx) return;
+                const notes = [220, 185, 164]; // Falling tone
+                notes.forEach((freq, idx) => {
+                    setTimeout(() => {
+                        this.playBeep(freq, 'sawtooth', 0.25);
+                    }, idx * 100);
+                });
+            }
+
+            playFanfare() {
+                if (!this.ctx) return;
+                const melody = [
+                    {f: 523.25, d: 0.15}, {f: 659.25, d: 0.15}, {f: 783.99, d: 0.15},
+                    {f: 1046.50, d: 0.4}
+                ];
+                let time = 0;
+                melody.forEach(item => {
+                    setTimeout(() => {
+                        this.playBeep(item.f, 'sine', item.d);
+                    }, time * 1000);
+                    time += item.d;
+                });
+            }
+        }
+
+        const sound = new SoundEffects();
+
+        /* ------------------------------------------------------------------
+           2. SOALAN MATEMATIK SEKOLAH RENDAH (BANK SOALAN)
+           ------------------------------------------------------------------ */
+        const questionBank = [
+            { q: "Apakah ejaan nombor 15 dalam perkataan?", options: ["LIMA BELAS", "LIMA PULUH", "LIMA SHAR", "SEBELAS"], a: 0 },
+            { q: "Apakah hasil tambah: 8 + 7 = ?", options: ["13", "15", "14", "16"], a: 1 },
+            { q: "Nombor manakah yang lebih besar daripada 18?", options: ["12", "17", "19", "15"], a: 2 },
+            { q: "Apakah ejaan nombor 20 dalam perkataan?", options: ["DUA BELAS", "DUA PULUH", "DUA SATU", "SEPULUH"], a: 1 },
+            { q: "Apakah hasil tolak: 20 - 9 = ?", options: ["11", "12", "10", "9"], a: 0 },
+            { q: "Apakah ejaan nombor 12 dalam perkataan?", options: ["LAPAN BELAS", "DUA BELAS", "TIGA BELAS", "DUA PULUH"], a: 1 },
+            { q: "Lengkapkan urutan nombor: 4, 8, 12, __?", options: ["14", "15", "16", "18"], a: 2 },
+            { q: "Berapakah jumlah: 6 + 6 + 2 = ?", options: ["12", "13", "14", "15"], a: 2 },
+            { q: "Apakah nombor sebelum 19?", options: ["17", "18", "20", "16"], a: 1 },
+            { q: "Apakah ejaan nombor 8 dalam perkataan?", options: ["LAPAN", "ENAM", "TUJUH", "SEMBILAN"], a: 0 }
+        ];
+
+        /* ------------------------------------------------------------------
+           3. PEMATUHAN PEMUBAH TINGKAH LAKU PERMAINAN (GAME STATE)
+           ------------------------------------------------------------------ */
+        let currentQuestionIdx = 0;
+        let score = 0;
+        let timer = 15;
+        let timerInterval = null;
+        let isGameActive = false;
+        let mouseFallbackMode = false;
+
+        // Dwell mechanism variables
+        let hoveredBoxIdx = -1;
+        let dwellStartTime = null;
+        const DWELL_DURATION = 1000; // 1000 ms = 1 saat
+
+        // DOM Elements
+        const webcamElement = document.getElementById('webcam');
+        const canvasElement = document.getElementById('output_canvas');
+        const canvasCtx = canvasElement.getContext('2d');
+        const scoreText = document.getElementById('score-text');
+        const questionCountText = document.getElementById('question-count');
+        const questionText = document.getElementById('question-text');
+        const timerText = document.getElementById('timer-text');
+        const statusInstruction = document.getElementById('status-instruction');
+        const startScreen = document.getElementById('start-screen');
+        const gameOverScreen = document.getElementById('game-over-screen');
+        const finalScoreText = document.getElementById('final-score');
+        const highScoresList = document.getElementById('high-scores-list');
+
+        const giftBoxes = [
+            document.getElementById('box-0'),
+            document.getElementById('box-1'),
+            document.getElementById('box-2'),
+            document.getElementById('box-3')
+        ];
+
+        /* ------------------------------------------------------------------
+           4. PERSATUAN MEDIAPIPE HANDS
+           ------------------------------------------------------------------ */
+        let indexFingerCoords = { x: -1, y: -1 };
+
+        const hands = new Hands({
+            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+        });
+
+        hands.setOptions({
+            maxNumHands: 1,
+            modelComplexity: 1,
+            minDetectionConfidence: 0.6,
+            minTrackingConfidence: 0.6
+        });
+
+        hands.onResults(onHandResults);
+
+        function onHandResults(results) {
+            // Re-size canvas according to viewport
+            canvasElement.width = window.innerWidth;
+            canvasElement.height = window.innerHeight;
+
+            canvasCtx.save();
+            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+
+            // Draw mirrored camera feed as background
+            if (results.image) {
+                canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+            }
+
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0 && !mouseFallbackMode) {
+                const landmarks = results.multiHandLandmarks[0];
+                
+                // Landmark 8: Index Finger Tip
+                const indexTip = landmarks[8];
+
+                // Coordinates flipped for mirrored feed
+                const x = (1 - indexTip.x) * canvasElement.width;
+                const y = indexTip.y * canvasElement.height;
+
+                indexFingerCoords = { x, y };
+
+                // Draw Custom Glowing Pointer Cursor on Index Tip
+                drawCursor(x, y);
+
+                // Dwell / Selection Logic
+                checkDwellSelection(x, y);
+            } else {
+                indexFingerCoords = { x: -1, y: -1 };
+                resetDwell();
+            }
+
+            canvasCtx.restore();
+        }
+
+        function drawCursor(x, y) {
+            // Outer Ring Glow
+            canvasCtx.beginPath();
+            canvasCtx.arc(x, y, 22, 0, 2 * Math.PI);
+            canvasCtx.fillStyle = 'rgba(245, 158, 11, 0.3)';
+            canvasCtx.fill();
+            canvasCtx.lineWidth = 3;
+            canvasCtx.strokeStyle = '#f59e0b';
+            canvasCtx.stroke();
+
+            // Inner Finger Point
+            canvasCtx.beginPath();
+            canvasCtx.arc(x, y, 8, 0, 2 * Math.PI);
+            canvasCtx.fillStyle = '#ef4444';
+            canvasCtx.fill();
+            canvasCtx.lineWidth = 2;
+            canvasCtx.strokeStyle = '#ffffff';
+            canvasCtx.stroke();
+        }
+
+        /* ------------------------------------------------------------------
+           5. MEKANISME DWELL & PENGECAMAN KOTAK
+           ------------------------------------------------------------------ */
+        function checkDwellSelection(x, y) {
+            if (!isGameActive) return;
+
+            let currentlyHovered = -1;
+
+            giftBoxes.forEach((box, idx) => {
+                const rect = box.getBoundingClientRect();
+                if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
+                    currentlyHovered = idx;
+                }
+            });
+
+            if (currentlyHovered !== -1) {
+                if (hoveredBoxIdx === currentlyHovered) {
+                    // Continuing hover
+                    const elapsedTime = Date.now() - dwellStartTime;
+                    const progress = Math.min(elapsedTime / DWELL_DURATION, 1);
+                    
+                    updateProgressRing(currentlyHovered, progress);
+
+                    if (elapsedTime >= DWELL_DURATION) {
+                        // Selection Confirmed!
+                        selectAnswer(currentlyHovered);
+                        resetDwell();
+                    }
+                } else {
+                    // New box hovered
+                    resetDwell();
+                    hoveredBoxIdx = currentlyHovered;
+                    dwellStartTime = Date.now();
+                }
+            } else {
+                resetDwell();
+            }
+        }
+
+        function updateProgressRing(boxIdx, progress) {
+            giftBoxes.forEach((box, idx) => {
+                const bar = box.querySelector('.progress-bar');
+                if (idx === boxIdx) {
+                    // 384 is stroke-dasharray
+                    const offset = 384 - (384 * progress);
+                    bar.style.strokeDashoffset = offset;
+                } else {
+                    bar.style.strokeDashoffset = 384;
+                }
+            });
+        }
+
+        function resetDwell() {
+            hoveredBoxIdx = -1;
+            dwellStartTime = null;
+            giftBoxes.forEach(box => {
+                const bar = box.querySelector('.progress-bar');
+                if (bar) bar.style.strokeDashoffset = 384;
+            });
+        }
+
+        /* ------------------------------------------------------------------
+           6. LOGIK PERMAINAN & SOALAN
+           ------------------------------------------------------------------ */
+        function startGame() {
+            sound.init();
+            score = 0;
+            currentQuestionIdx = 0;
+            scoreText.textContent = score;
+            startScreen.classList.add('hidden');
+            gameOverScreen.classList.add('hidden');
+            isGameActive = true;
+
+            loadQuestion();
+        }
+
+        function loadQuestion() {
+            if (currentQuestionIdx >= questionBank.length) {
+                endGame();
+                return;
+            }
+
+            resetDwell();
+            const currentQ = questionBank[currentQuestionIdx];
+            
+            questionCountText.textContent = `${currentQuestionIdx + 1}/${questionBank.length}`;
+            questionText.textContent = currentQ.q;
+
+            // Set choices into 4 gift boxes
+            giftBoxes.forEach((box, idx) => {
+                const textSpan = box.querySelector('.box-answer');
+                textSpan.textContent = currentQ.options[idx];
+                box.className = box.className.replace(/border-green-400|border-red-500/g, '');
+                box.classList.remove('scale-110');
+            });
+
+            // Reset Timer (15 saat per soalan)
+            timer = 15;
+            timerText.textContent = `${timer}s`;
+            clearInterval(timerInterval);
+            
+            timerInterval = setInterval(() => {
+                timer--;
+                timerText.textContent = `${timer}s`;
+                if (timer <= 0) {
+                    clearInterval(timerInterval);
+                    sound.playWrong();
+                    nextQuestion();
+                }
+            }, 1000);
+        }
+
+        function selectAnswer(chosenIdx) {
+            if (!isGameActive) return;
+            clearInterval(timerInterval);
+
+            const currentQ = questionBank[currentQuestionIdx];
+            const isCorrect = (chosenIdx === currentQ.a);
+
+            const chosenBox = giftBoxes[chosenIdx];
+
+            if (isCorrect) {
+                sound.playCorrect();
+                // Bonus skor berasaskan masa berbaki
+                const timeBonus = timer * 10;
+                score += 100 + timeBonus;
+                scoreText.textContent = score;
+
+                // Animasi Hadiah Terbuka (Confetti & Visual Scale)
+                chosenBox.classList.add('scale-110');
+                triggerGiftExplosion(chosenBox);
+            } else {
+                sound.playWrong();
+                chosenBox.classList.add('border-red-500');
+            }
+
+            // Tunjukkan jawapan yang betul jika salah
+            giftBoxes[currentQ.a].classList.add('border-green-400');
+
+            isGameActive = false;
+            setTimeout(() => {
+                currentQuestionIdx++;
+                isGameActive = true;
+                loadQuestion();
+            }, 1500);
+        }
+
+        function triggerGiftExplosion(element) {
+            const rect = element.getBoundingClientRect();
+            const x = (rect.left + rect.width / 2) / window.innerWidth;
+            const y = (rect.top + rect.height / 2) / window.innerHeight;
+
+            confetti({
+                particleCount: 60,
+                spread: 70,
+                origin: { x, y },
+                colors: ['#f59e0b', '#10b981', '#3b82f6', '#ec4899', '#ffffff']
+            });
+        }
+
+        function endGame() {
+            isGameActive = false;
+            clearInterval(timerInterval);
+            sound.playFanfare();
+
+            finalScoreText.textContent = score;
+            saveHighScore(score);
+            renderHighScores();
+
+            gameOverScreen.classList.remove('hidden');
+        }
+
+        /* ------------------------------------------------------------------
+           7. PENGURUSAN MARKAH TINGGI (LOCALSTORAGE)
+           ------------------------------------------------------------------ */
+        function saveHighScore(newScore) {
+            let highScores = JSON.parse(localStorage.getItem('nombor_high_scores') || '[]');
+            const dateStr = new Date().toLocaleDateString('ms-MY', { day: 'numeric', month: 'short' });
+            highScores.push({ score: newScore, date: dateStr });
+            highScores.sort((a, b) => b.score - a.score);
+            highScores = highScores.slice(0, 5); // Simpan Top 5 sahaja
+            localStorage.setItem('nombor_high_scores', JSON.stringify(highScores));
+        }
+
+        function renderHighScores() {
+            let highScores = JSON.parse(localStorage.getItem('nombor_high_scores') || '[]');
+            highScoresList.innerHTML = '';
+            
+            if (highScores.length === 0) {
+                highScoresList.innerHTML = '<li class="text-slate-500 text-center">Tiada rekod lagi</li>';
+                return;
+            }
+
+            highScores.forEach((item, idx) => {
+                const li = document.createElement('li');
+                li.className = 'flex justify-between items-center bg-slate-900/60 px-3 py-1.5 rounded-lg border border-slate-700/50';
+                li.innerHTML = `
+                    <span class="font-bold text-amber-300">#${idx + 1}</span>
+                    <span class="text-slate-300 font-semibold">${item.score} Mata</span>
+                    <span class="text-xs text-slate-500">${item.date}</span>
+                `;
+                highScoresList.appendChild(li);
+            });
+        }
+
+        /* ------------------------------------------------------------------
+           8. TETAPAN CAMERA & EVENT LISTENERS
+           ------------------------------------------------------------------ */
+        async function setupCamera() {
+            try {
+                const camera = new Camera(webcamElement, {
+                    onFrame: async () => {
+                        await hands.send({ image: webcamElement });
+                    },
+                    width: 1280,
+                    height: 720
+                });
+                await camera.start();
+                statusInstruction.textContent = "👉 Tunjukkan jari telunjuk anda & tahan pada kotak pilihan untuk menjawab!";
+            } catch (err) {
+                console.warn("Webcam tidak ditemui/dibenarkan. Bertukar ke Mod Tetikus/Sentuh.", err);
+                statusInstruction.textContent = "⚠️ Webcam tidak diaktifkan. Mod Tetikus/Sentuh diaktifkan secara automatik.";
+                mouseFallbackMode = true;
+            }
+        }
+
+        // Mouse & Touch Fallback Event Listeners
+        giftBoxes.forEach((box, idx) => {
+            box.addEventListener('click', () => {
+                if (isGameActive) {
+                    selectAnswer(idx);
+                }
+            });
+        });
+
+        document.getElementById('start-btn').addEventListener('click', () => {
+            setupCamera();
+            startGame();
+        });
+
+        document.getElementById('restart-btn').addEventListener('click', () => {
+            startGame();
+        });
+
+        document.getElementById('toggle-mode-btn').addEventListener('click', () => {
+            mouseFallbackMode = !mouseFallbackMode;
+            const btn = document.getElementById('toggle-mode-btn');
+            if (mouseFallbackMode) {
+                btn.textContent = "📷 Mod Webcam";
+                statusInstruction.textContent = "🖱️ Mod Tetikus/Sentuh Aktif: Klik pada kotak jawapan.";
+            } else {
+                btn.textContent = "🖱️ Mod Tetikus/Sentuh";
+                statusInstruction.textContent = "👉 Halakan telunjuk anda & tahan pada kotak jawapan.";
+            }
+        });
+    </script>
+</body>
+</html>
